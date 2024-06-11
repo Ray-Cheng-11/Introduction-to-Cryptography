@@ -1,89 +1,58 @@
+#include <cryptopp/filters.h>
+#include <cryptopp/hex.h>
+#include <cryptopp/sha.h>
 #include <fstream>
-#include "cryptopp/sha.h"
-#include "cryptopp/osrng.h"
-#include "cryptopp/hex.h"
-#include "cryptopp/files.h"
+
+using namespace std;
+using namespace CryptoPP;
+
+inline const string toHex(const string str)
+{
+  string hex;
+  HexEncoder encoder;
+  encoder.Attach(new StringSink(hex));
+  encoder.Put((const CryptoPP::byte *)str.c_str(), str.size());
+  encoder.MessageEnd();
+  return hex;
+}
 
 int main()
 {
-  CryptoPP::byte zero[CryptoPP::SHA256::DIGESTSIZE];
-  memset(zero, 0, CryptoPP::SHA256::DIGESTSIZE);
-
-  CryptoPP::SHA256 hash;
-  CryptoPP::byte digest[CryptoPP::SHA256::DIGESTSIZE];
-  CryptoPP::AutoSeededRandomPool prng;
-  CryptoPP::byte nonce[4];
-  CryptoPP::byte preimage[CryptoPP::SHA256::DIGESTSIZE + 4];
-
-  CryptoPP::HexEncoder hex_encoder;
-  std::fstream file;
-  file.open("out1.txt", std::fstream::out | std::fstream::trunc);
-  hex_encoder.Attach(new CryptoPP::FileSink(file));
-  CryptoPP::HexDecoder hex_decoder;
-  std::string hex_string;
-
-  std::string msg = "Bitcoin";
-  hash.Update((const CryptoPP::byte *)msg.data(), msg.length());
-  hash.Final(digest);
-
-  file << 0 << "\n";
-  hex_encoder.PutMessageEnd(digest, CryptoPP::SHA256::DIGESTSIZE);
-  file << "\n";
-
-  msg = "00000000";
-  hex_decoder.Attach(new CryptoPP::StringSink(hex_string));
-  hex_decoder.PutMessageEnd((const CryptoPP::byte *)msg.data(), msg.length());
-  memcpy(preimage, digest, CryptoPP::SHA256::DIGESTSIZE);
-  memcpy(preimage + CryptoPP::SHA256::DIGESTSIZE, hex_string.data(), 4);
-  hex_decoder.Detach();
-  hex_string.clear();
-  hash.Update(preimage, CryptoPP::SHA256::DIGESTSIZE + 4);
-  hash.Final(digest);
-
-  file << msg << "\n";
-  hex_encoder.PutMessageEnd(digest, CryptoPP::SHA256::DIGESTSIZE);
-  file << "\n";
-  file << 1 << "\n";
-  hex_encoder.PutMessageEnd(digest, CryptoPP::SHA256::DIGESTSIZE);
-  file << "\n";
-
-  msg = "0000000A";
-  hex_decoder.Attach(new CryptoPP::StringSink(hex_string));
-  hex_decoder.PutMessageEnd((const CryptoPP::byte *)msg.data(), msg.length());
-  memcpy(preimage, digest, CryptoPP::SHA256::DIGESTSIZE);
-  memcpy(preimage + CryptoPP::SHA256::DIGESTSIZE, hex_string.data(), 4);
-  hex_decoder.Detach();
-  hex_string.clear();
-  hash.Update(preimage, CryptoPP::SHA256::DIGESTSIZE + 4);
-  hash.Final(digest);
-
-  file << msg << "\n";
-  hex_encoder.PutMessageEnd(digest, CryptoPP::SHA256::DIGESTSIZE);
-  file << "\n";
-
-  for (uint8_t num = 2; num < 10; ++num)
+  ofstream out;
+  out.open("out2.txt", ios::out);
+  string outputHash, nowHash(32, 0), msg = "111550012", prevHash, nonce(4, 0);
+  SHA256 hash;
+  hash.Update((const CryptoPP::byte *)msg.data(), msg.size());
+  hash.Final((CryptoPP::byte *)&nowHash[0]);
+  int i, j;
+  unsigned int n = 0;
+  for (i = 0; i < 64; i++)
   {
-    file << +num << "\n";
-    hex_encoder.PutMessageEnd(digest, CryptoPP::SHA256::DIGESTSIZE);
-    file << "\n";
-
-    memcpy(preimage, digest, CryptoPP::SHA256::DIGESTSIZE);
-    do
+    n = 0;
+    prevHash = nowHash;
+    while (1)
     {
-      prng.GenerateBlock(nonce, 4);
-      memcpy(preimage + CryptoPP::SHA256::DIGESTSIZE, nonce, 4);
-
-      hash.Update(preimage, CryptoPP::SHA256::DIGESTSIZE + 4);
-      hash.Final(digest);
-    } while (memcmp(digest, zero, num >> 1) != 0 || ((num % 2) && ((digest[(num >> 1)] >> 4) ^ zero[num >> 1]) != 0));
-
-    hex_encoder.PutMessageEnd(nonce, 4);
-    file << "\n";
-    hex_encoder.PutMessageEnd(digest, CryptoPP::SHA256::DIGESTSIZE);
-    file << "\n";
+      for (j = 0; j < 4; j++)
+        nonce[j] = (char)((n >> (8 * (3 - j))));
+      msg = prevHash + nonce;
+      hash.Update((const CryptoPP::byte *)msg.data(), 36);
+      hash.Final((CryptoPP::byte *)&nowHash[0]);
+      outputHash = toHex(nowHash);
+      n++;
+      if (n == 0)
+        break;
+      for (j = 0; outputHash.c_str()[j] == '0'; j++)
+        ;
+      if (i == j)
+        break;
+    }
+    out << i << '\n'
+        << toHex(prevHash) << '\n';
+    out << toHex(nonce) << '\n'
+        << outputHash << endl;
+    if (n == 0)
+      break;
   }
-
-  hex_encoder.Detach();
-  file.close();
+  out << "Fin";
   return 0;
 }
